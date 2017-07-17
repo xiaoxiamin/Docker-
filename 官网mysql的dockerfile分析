@@ -1,0 +1,159 @@
+# 如果你用记事本打开的，关掉，换个支持代码高亮，
+# 支持括号，if-fi等等自动配对的编辑器，要不看到眼瞎！
+
+
+
+
+
+
+
+set -eo pipefail
+# 表示如果语句返回非0则退出，管道执行中有一部分返回非0，则整条语句非0
+
+if [ "${1:0:1}" = '-' ]; then
+	set -- mysqld "$@"
+fi
+# 加入-选项的话，执行mysqld -选项，没有-标记，则不执行mysqld
+# 把这四句单独放入sh中执行可以看到效果
+
+wantHelp=
+for arg; do
+	case "$arg" in
+		-'?'|--help|--print-defaults|-V|--version)
+			wantHelp=1
+			break
+			;;
+	esac
+done
+# 定义函数，若用户想获取帮助，则跳过配置部分，显示mysql帮助，默认配置，软件版本
+if [ "$1" = 'mysqld' -a -z "$wantHelp" ]; then
+    # 若启动命令是mysqld，而且没有wantHelp，则执行以下代码；
+    # 若启动命令不是mysqld，则跳过直接执行传入命令。
+    # 解释一下，CMD的命令是可以被覆盖的，所以当用户定义了自己想要执行的命令时，就跳过了CMD部分
+    # 这个脚本也就不需要也不能去执行，所以直接转入最后一行。
+    # 若用户输入了wantHelp，那就显示上面函数定义的信息，不做配置。
+	DATADIR="$("$@" --verbose --help 2>/dev/null | awk '$1 == "datadir" { print $2; exit }')"
+        # 查看数据库存储目录，如果我们没有配置，那这条命令执行后就是默认的/var/lib/mysql
+	if [ ! -d "$DATADIR/mysql" ]; then
+            # 假如数据库存储目录不是空的，就跳过配置
+            # 在k8s的环境中比较好理解这一点，配置rc之后，基于这个镜像启动新的容器，
+            # 挂载目录中很可能是有数据的，如果还执行初始化，可能擦掉之前的数据。
+            # 或者你想通过容器去操作已有的数据库文件，是个保护机制
+
+            # 这就是dockerfile那边删掉/var/lib/mysql的原因咯。
+		if [ -z "$MYSQL_ROOT_PASSWORD" -a -z "$MYSQL_ALLOW_EMPTY_PASSWORD" -a -z "$MYSQL_RANDOM_ROOT_PASSWORD" ]; then
+			echo >&2 'error: database is uninitialized and password option is not specified '
+			echo >&2 '  You need to specify one of MYSQL_ROOT_PASSWORD, MYSQL_ALLOW_EMPTY_PASSWORD and MYSQL_RANDOM_ROOT_PASSWORD'
+			exit 1
+		fi
+                # 如果没有配置数据库密码，没有允许空密码，没有配置随机密码，则返回1，直接退出脚本。
+		mkdir -p "$DATADIR"
+                # 建立数据库目录，这条命令没有返回结果，目录存在不报错，不存在就新建
+                chown -R mysql:mysql "$DATADIR"
+                # 改变一下目录的属主和属组，因为通过docker挂载，MySQL不一定有操作它的权限
+
+                echo 'Initializing database'
+		"$@" --initialize-insecure
+		echo 'Database initialized'
+                # 启动数据库
+
+                "$@" --skip-networking &
+		pid="$!"
+
+		mysql=( mysql --protocol=socket -uroot )
+
+		for i in {30..0}; do
+			if echo 'SELECT 1' | "${mysql[@]}" &> /dev/null; then
+				break
+			fi
+			echo 'MySQL init process in progress...'
+			sleep 1
+		done
+		if [ "$i" = 0 ]; then
+			echo >&2 'MySQL init process failed.'
+			exit 1
+		fi
+                
+                # 这里用客户端链接mysql，来判断mysql是否启动成功
+		if [ -z "$MYSQL_INITDB_SKIP_TZINFO" ]; then
+			# sed is for https://bugs.mysql.com/bug.php?id=20545
+			mysql_tzinfo_to_sql /usr/share/zoneinfo | sed 's/Local time zone must be set--see zic manual page/FCTY/' | "${mysql[@]}" mysql
+		fi
+                # 据说是MySQL的时区bug，不用管
+		if [ ! -z "$MYSQL_RANDOM_ROOT_PASSWORD" ]; then
+			MYSQL_ROOT_PASSWORD="$(pwgen -1 32)"
+			echo "GENERATED ROOT PASSWORD: $MYSQL_ROOT_PASSWORD"
+		fi
+		"${mysql[@]}" <<-EOSQL
+			-- What's done in this file shouldn't be replicated
+			--  or products like mysql-fabric won't work
+			SET @@SESSION.SQL_LOG_BIN=0;
+
+			DELETE FROM mysql.user ;
+			CREATE USER 'root'@'%' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}' ;
+			GRANT ALL ON *.* TO 'root'@'%' WITH GRANT OPTION ;
+			DROP DATABASE IF EXISTS test ;
+			FLUSH PRIVILEGES ;
+		EOSQL
+                # 若要求随机密码，那就生成一个然后执行MySQL语句
+		if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+			mysql+=( -p"${MYSQL_ROOT_PASSWORD}" )
+		fi
+                # 输入了就直接用
+		if [ "$MYSQL_DATABASE" ]; then
+			echo "CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\` ;" | "${mysql[@]}"
+			mysql+=( "$MYSQL_DATABASE" )
+		fi
+                # 要求的话新建库
+		if [ "$MYSQL_USER" -a "$MYSQL_PASSWORD" ]; then
+			echo "CREATE USER '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD' ;" | "${mysql[@]}"
+
+			if [ "$MYSQL_DATABASE" ]; then
+				echo "GRANT ALL ON \`$MYSQL_DATABASE\`.* TO '$MYSQL_USER'@'%' ;" | "${mysql[@]}"
+			fi
+
+			echo 'FLUSH PRIVILEGES ;' | "${mysql[@]}"
+		fi
+                # 要求的话新建用户
+		echo
+		for f in /docker-entrypoint-initdb.d/*; do
+			case "$f" in
+				*.sh)     echo "$0: running $f"; . "$f" ;;
+				*.sql)    echo "$0: running $f"; "${mysql[@]}" < "$f"; echo ;;
+				*.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${mysql[@]}"; echo ;;
+				*)        echo "$0: ignoring $f" ;;
+			esac
+			echo
+		done
+                # dockerfile当中不是新建了这个文件夹？如果这么多的配置还是满足不了你的需求，那就把脚本啊各种扔到这里，它会执行的。
+		if [ ! -z "$MYSQL_ONETIME_PASSWORD" ]; then
+			"${mysql[@]}" <<-EOSQL
+				ALTER USER 'root'@'%' PASSWORD EXPIRE;
+			EOSQL
+		fi
+                # 一次性密码？这个我真没用过
+		if ! kill -s TERM "$pid" || ! wait "$pid"; then
+			echo >&2 'MySQL init process failed.'
+			exit 1
+		fi
+                # 干掉mysql，说好的启动呢？因为在CMD也写了mysqld
+                # 把那边杀掉了，才能启动这个处理了一堆参数的呀。
+                #
+                # 再说一下，要想让docker进程能够-d保持在后台执行，
+                # 那么docker容器内部的任务必须前台执行，简单说就是，
+                # 容器内的任务不能有执行完毕这个概念，比如你敲service mysql start
+                # 启动mysql服务，它有启动完成的结果，要想让它保持在后台，
+                # 就得用mysqld，你在命令行试一下，敲完这个终端不会另起一行让你继续执行命令的
+                # 就是这个意思，再问自杀啦。
+		echo
+		echo 'MySQL init process done. Ready for start up.'
+		echo
+	fi
+
+	chown -R mysql:mysql "$DATADIR"
+        # 开始时说的，如果挂载的mysql目录有文件了，跳过配置，直接改一下属性用。
+fi
+
+exec "$@"
+# 开始时说的，如果传入的不是mysqld，直接执行输入的命令就好
+
