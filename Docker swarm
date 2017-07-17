@@ -1,0 +1,23 @@
+创建一个swarm
+	docker swarm init --advertise-addr host-ip:port 
+
+[docker@jiuyang ~]$ docker swarm init --advertise-addr 192.168.1.50:2377
+Swarm initialized: current node (ea10vrd84vnb3u9wx5phhv00i) is now a manager.
+
+To add a worker to this swarm, run the following command:
+    docker swarm join \
+    --token SWMTKN-1-0asyg1kccwit36msyfmxwzzku6z84g5ay7fjwbhpr7lu6v8fy2-40e90q4svhrs4v07rsfthrj19 \
+    192.168.1.50:2377
+
+To add a manager to this swarm, run the following command:
+    docker swarm join \
+    --token SWMTKN-1-0asyg1kccwit36msyfmxwzzku6z84g5ay7fjwbhpr7lu6v8fy2-2ob66mmq9iedd2n1hogry6xqf \
+    192.168.1.50:2377
+
+退出swarm  ： docker swarm leave
+
+查看swarm 节点 ： docker node  ls
+
+查看某个节点： docker node inspect self --pretty
+
+drain一个节点： docker node update --availability drain node-1
