@@ -1,0 +1,25 @@
+docker监控命令：
+stats :     监控容器进程使用的cpu 内存  i/o性能等
+attach ：附着到容器的主进程（一般不推荐使用）
+exec ：   给容器单独分配一个bash终端，提供调试
+logs :      查看容器的日志
+inspect:  查看容器的详细信息
+info: 查看docker服务信息
+
+build -t ：build镜像 加上tag
+docker　images 查看镜像
+docker ps     查看正在运行中的容器
+docker ps -a 查看所有状态的容器
+docker cp ：  cp容器里的文件/目录到宿主目录 或者cp宿主目录/文件到容器中
+docker rm :   删除容器
+docker stop : 停止容器
+docker rmi :   删除镜像
+docker tag :  给镜像打上一个tag
+kill 停掉容器
+
+网络：
+docker network create 
+docker network ls/rm/inspect
+数据卷：
+docker volume create
+docker volume ls/rm
