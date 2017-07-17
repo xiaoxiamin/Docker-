@@ -1,0 +1,13 @@
+官方源：
+ curl -fsSl https://get.docker.com/ |sh
+阿里云源安装脚本：
+curl -sSL http://acs-public-mirror.oss-cn-hangzhou.aliyuncs.com/docker-engine/internet | sh -
+daocloud安装源：
+curl -sSL https://get.daocloud.io/docker | sh
+
+ 加速器：
+使用 阿里云加速器 或者 DaoCloud 加速器（也就是代理、镜像）即可。
+  ● 阿里云加速器：注册阿里云开发账户(免费的)后，访问这个链接就可以看到加速器地址： https://cr.console.aliyun.com/#/accelerator
+  ● DaoCloud 加速器：注册 DaoCloud 账户(支持微信登录)，然后访问： https://www.daocloud.io/mirror#accelerator-doc
+  ● 不要使用加速器网站所给的配置脚本，容易导致错误。我们只需获取其提供的加速器地址即可。
+  
