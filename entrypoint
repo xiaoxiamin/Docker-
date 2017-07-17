@@ -1,0 +1,9 @@
+dockerfile有一条ENTRYPOINT指令，指定容器run时入口文件。
+eg:
+官方mysql的entrypoint脚本，判断mysql容器是否初始化过，如果没有则执行初始化。
+如下是mysql容器的dockerfile里指定的docker-entrypoint.sh脚本，和创建的docker-entrypoint-initdb.d文件夹（作用是方便用户自己定制入口文件）：
+
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN ln -s usr/local/bin/docker-entrypoint.sh /entrypoint.sh # backwards compat
+ENTRYPOINT ["docker-entrypoint.sh"]
+
