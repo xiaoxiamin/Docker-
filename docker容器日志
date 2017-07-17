@@ -1,0 +1,24 @@
+
+容器的日志 则可以通过 docker logs 命令来访问，而且可以像 tail -f 一样，使用 docker logs -f 来实时查看。
+如果使用 Docker Compose，则可以通过 docker-compose logs <服务名> 来查看。
+
+如果深究其日志位置，每个容器的日志默认都会以 json-file 的格式存储于 /var/lib/docker/containers/<容器id>/<容器id>-json.log 下，
+不过并不建议去这里直接读取内容，因为 Docker 提供了更完善地日志收集方式 - Docker 日志收集驱动。
+
+关于日志收集，Docker 内置了很多日志驱动，可以通过类似于 fluentd, syslog 这类服务收集日志。
+无论是 Docker 引擎，还是容器，都可以使用日志驱动。比如，如果打算用 fluentd 收集某个容器日志，可以这样启动容器：
+
+
+$ docker run -d \
+    --log-driver=fluentd \
+    --log-opt fluentd-address=10.2.3.4:24224 \
+    --log-opt tag="docker.{{.Name}}" \
+    nginx
+
+其中 10.2.3.4:24224 是 fluentd 服务地址，实际环境中应该换成真实的地址。
+
+将日志作为标准输出，通过docker daemon收集：
+
+# forward request and error logs to docker log collector
+RUN ln -sf /dev/stdout /var/log/nginx/access.log \
+	&& ln -sf /dev/stderr /var/log/nginx/error.log
