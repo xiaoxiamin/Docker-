@@ -1,0 +1,51 @@
+创建一个swarm服务
+docker service create option image
+
+查看运行服务的容器
+docker service ls
+
+创建服务的时候指定复制集
+docker service create --name test --replicas 3 images-id
+
+创建overlay network所有节点均可使用：
+docker network create --driver overlay my-network
+
+创建服务的时候指定overlay网络：
+$ docker service create \
+  --replicas 3 \
+  --network my-multi-host-network \
+  --name my-web \
+  nginx
+
+
+配置服务热更新：
+
+$ docker service create \
+  --replicas 10 \
+  --name my_web \
+  --update-delay 10s \ #更新服务的时间延迟
+  --update-parallelism 2 \#调度同时更新任务的最大数量
+  --update-failure-action continue \
+  image 
+
+创建vloume  mount和bind :
+
+(mount)
+$ docker service create \
+  --mount type=volume,src=\'#\'" /p>
+  --name myservice \
+  <IMAGE>
+
+(bind)挂载宿主机目录：
+
+# Mount a read-write bind
+$ docker service create \
+  --mount type=bind,src=\'#\'" \
+  --name myservice \
+  <IMAGE>
+
+# Mount a read-only bind
+$ docker service create \
+  --mount type=bind,src=\'#\'" \
+  --name myservice \
+  <IMAGE>
