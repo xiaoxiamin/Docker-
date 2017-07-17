@@ -1,0 +1,9 @@
+docker volume 的概念：
+挂载分为挂载本地宿主目录，或者挂载数据卷，而数据卷又分为匿名数据卷和命名数据卷
+Dockerfile中定义的是挂载是指匿名数据卷
+这个设置可以在运行时覆盖。通过docker run的-v参数或者docker-compose.yml的volumes指定
+命名卷的好处是可以复用，其它容器可以通过这个命名数据卷的名字来指定挂载，共享其内容（不过要注意并发访问的竞争问题）
+数据卷默认可能会保存于 /var/lib/docker/volumes，不过一般不需要、也不应该访问这个位置。
+
+删除未命名未使用的volume :
+docker volume rm $(docker volume ls -f dangling=true) 
