@@ -1,0 +1,90 @@
+运行registry
+docker run -d -p 5000:5000 --restart always --name registry registry:2
+
+compose启动registry，自定义配置文件
+docker-compose.yml
+version: '2'
+services:
+  registry: 
+    image: registry
+    ports: 
+      - "5000:5000" 
+    volumes:
+      - images-lib:/var/lib/registry
+      - ./config.yml:/etc/docker/registry/config.yml
+    restart: "always" 
+volumes:
+  images-lib: {}
+
+
+自定义registry配置文件：
+config.yml
+version: 0.1
+log:
+    fields:
+        service: registry
+storage:
+    cache:
+        blobdescriptor: inmemory
+    filesystem:
+        rootdirectory: /var/lib/registry
+    delete:
+        enabled: true
+http:
+    addr: :5000
+    headers:
+        X-Content-Type-Options: [nosniff]
+health:
+    storagedriver:
+        enabled: true
+        interval: 10s
+        threshold: 3
+proxy:
+   remoteurl: https://registry-1.docker.io
+
+修改docker配置
+编辑/usr/lib/systemd/system/docker.service 中的 ExecStart= 的结尾，加入 --insecure-registry=192.168.99.100:5000，将 192.168.99.100:5000 替换成你的 registry 地址。如果有很多 registry，可以设置多组。或者如果虚拟机的 IP 总是变化，也可以使用 CIDR 的形式，比如 --insecure-registry=192.168.99.0/24。
+重启docker服务
+上传镜像到registry中
+先打上tag:
+docker tag mysql:5.6 192.168.1.50:5000/xiamin/mysql:v1
+
+
+上传至registry中
+docker push 192.168.1.50:5000/xiamin/mysql:v1
+
+查看registry中的镜像
+curl http://192.168.1.50/v2/_catalog
+
+
+查看registry某个镜像的tag:
+GET    /v2/<name>/tags/list
+eg:
+http://192.168.1.50:5000/v2/xiamin/mysql/tags/list
+
+删除registry中的镜像
+首先，在默认情况下，docker registry 是不允许删除镜像的，需要在配置config.yml中启用：
+delete:
+    enabled: true
+
+
+然后，使用 API GET /v2/<镜像名>/manifests/<tag> 来取得要删除的镜像:Tag所对应的 digest。
+Registry 2.3 以后，必须加入头 Accept: application/vnd.docker.distribution.manifest.v2+json，否则取到的 digest 是错误的，这是为了防止误删除。
+比如，要删除 myimage:latest 镜像，那么取得 digest 的命令是：
+$ curl --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+  -I -X HEAD http://192.168.99.100:5000/v2/myimage/manifests/latest \
+  | grep Digest
+Docker-Content-Digest: sha256:3a07b4e06c73b2e3924008270c7f3c3c6e3f70d4dbb814ad8bff2697123ca33c
+
+
+然后调用 API DELETE /v2/<镜像名>/manifests/<digest> 来删除镜像。比如：
+curl  -X DELETE http://192.168.99.100:5000/v2/myimage/manifests/sha256:3a07b4e06c73b2e3924008270c7f3c3c6e3f70d4dbb814ad8bff2697123ca33c
+
+
+至此，镜像已从 registry 中标记删除，外界访问 pull 不到了。但是 registry 的本地空间并未释放，需要等待垃圾收集才会释放。而垃圾收集不可以在线进行，必须停止 registry，然后执行。比如，假设 registry 是用 Compose 运行的，那么下面命令用来垃圾收集：
+docker-compose stop
+docker run -it --name gc --rm --volumes-from registry_registry_1 registry:2 garbage-collect /etc/registry/config.yml
+docker-compose start
+
+
+其中 registry_registry_1 可以替换为实际的 registry 的容器名，而 /etc/registry/config.yml 则替换为实际的 registry 配置文件路径。
